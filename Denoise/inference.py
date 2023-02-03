@@ -1,7 +1,7 @@
 import argparse
 import os
 import sys
-
+import librosa
 import toml
 import torch
 import time
@@ -9,7 +9,8 @@ import math
 import numpy as np
 from fullsubnet_plus import FullSubNet_Plus
 from audio_zen.utils import prepare_device
-
+import torchaudio
+from torch.utils.data import DataLoader
 
 def decompress_cIRM(mask, K=10, limit=9.9):
     mask = limit * (mask >= limit) - limit * (mask <= -limit) + mask * (torch.abs(mask) < limit)
@@ -73,7 +74,16 @@ def istft(features, n_fft=512, hop_length=256, win_length=512, length=None, use_
 def mag_phase(complex_tensor):
     return torch.abs(complex_tensor), torch.angle(complex_tensor)
 
-def mag_complex_full_band_crm_mask(noisy):
+def mag_complex_full_band_crm_mask(audio):
+        device = prepare_device(torch.cuda.device_count())
+        dataloader = DataLoader(
+            dataset=audio,
+            batch_size=1,
+            num_workers=0,
+        )
+        noisy_audio = dataloader.to(device)
+        noisy = librosa.load(noisy_audio, sr=16000)[0]
+        noisy = noisy.astype(np.float32)
         noisy_complex = stft(noisy)
         noisy_mag, _ = mag_phase(noisy_complex)
 
@@ -81,7 +91,6 @@ def mag_complex_full_band_crm_mask(noisy):
         noisy_real = (noisy_complex.real).unsqueeze(1)
         noisy_imag = (noisy_complex.imag).unsqueeze(1)
 
-        device = prepare_device(torch.cuda.device_count())
         
         model = FullSubNet_Plus(sb_num_neighbors = 15,
                             fb_num_neighbors = 0,
